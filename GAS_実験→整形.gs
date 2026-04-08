@@ -14,16 +14,17 @@ function onOpen() {
 }
 
 /**
- * メイン処理
+ * メイン処理（並列化版）
  */
-async function processDiaryToExperiment() {
+function processDiaryToExperiment() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const diarySheet = ss.getSheetByName(DIARY_SHEET);
   const expSheet = ss.getSheetByName(EXP_SHEET);
   
   const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 5).getValues();
-  let totalAdded = 0;
-
+  
+  // 1. 処理対象のデータをリストアップ
+  const targets = [];
   for (let i = 0; i < diaryData.length; i++) {
     const rowNum = i + 2;
     const date = diaryData[i][0];
@@ -31,90 +32,74 @@ async function processDiaryToExperiment() {
     const cookMemo = diaryData[i][3]; // D列：料理
     const status = String(diaryData[i][4]).trim();
 
-    // 未処理（E列が空）かつ内容がある場合
     if ((expMemo || cookMemo) && status === "") {
       const dateStr = date instanceof Date ? Utilities.formatDate(date, "JST", "yyyy-MM-dd") : String(date);
       const combinedInput = `【日記・実験】\n${expMemo}\n\n【料理ログ】\n${cookMemo}`;
-
-      SpreadsheetApp.getActive().toast(`${dateStr}を解析中...`, '🧪');
-
-      // AIに投げて解析（文字数が多い場合は自動分割）
-      const results = await fetchAiAnalysis(combinedInput, dateStr);
-
-      if (results && results.length > 0) {
-        writeToExperimentSheet(expSheet, results);
-        diarySheet.getRange(rowNum, 5).setValue('済');
-        totalAdded += results.length;
-      }
+      targets.push({ rowNum, dateStr, combinedInput });
     }
   }
 
-  SpreadsheetApp.getUi().alert(totalAdded > 0 ? `${totalAdded}件の実験を転記しました。` : '対象の未処理日記が見つかりませんでした。');
+  if (targets.length === 0) {
+    SpreadsheetApp.getUi().alert('対象の未処理日記が見つかりませんでした。');
+    return;
+  }
+
+  // 2. AIへのリクエストを一括作成
+  SpreadsheetApp.getActive().toast(`${targets.length}件を並列解析中...`, '🧪');
+  const requests = targets.map(t => createAiRequest(t.combinedInput, t.dateStr));
+
+  // 3. 一括送信（ここが並列処理の核心）
+  const responses = UrlFetchApp.fetchAll(requests);
+
+  // 4. 結果をまとめて処理
+  let totalAdded = 0;
+  const allResults = [];
+  
+  targets.forEach((t, index) => {
+    const resText = responses[index].getContentText();
+    const json = JSON.parse(resText);
+    
+    if (!json.error && json.candidates && json.candidates[0].content.parts[0].text) {
+      const results = parseMarkdown(json.candidates[0].content.parts[0].text);
+      if (results && results.length > 0) {
+        allResults.push(...results);
+        diarySheet.getRange(t.rowNum, 5).setValue('済');
+        totalAdded += results.length;
+      }
+    } else {
+      console.error(`Error for ${t.dateStr}:`, resText);
+    }
+  });
+
+  // 5. 実験シートへ一括書き込み
+  if (allResults.length > 0) {
+    writeToExperimentSheet(expSheet, allResults);
+  }
+
+  SpreadsheetApp.getUi().alert(totalAdded > 0 ? `${totalAdded}件の実験を転記しました。` : '解析に失敗したか、有効なデータがありませんでした。');
 }
 
 /**
- * AI呼び出し
+ * AIリクエストオブジェクトの生成
  */
-async function fetchAiAnalysis(text, dateStr) {
+function createAiRequest(text, dateStr) {
   const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
-  
-  const prompt = `あなたは実験結果の管理アシスタント」です。 ユーザーが雑に語る「試したこと」を、事実ベースで構造化・評価し、再利用可能な形に整理してください。 
-■ 絶対ルール（最優先） 
-ユーザー未言及の情報は一切追加しない（推測・補完・具体化禁止） 
-■ 出力フォーマット（固定） 
-Markdown表： 日付 / スキル / ミニスキル / If (トリガー) / Then (アクション) / 結果 / ステータス 
-■ 構造化ルール 
-▼ If / Then（最重要） 
-情報は削らず整理する 
-※改行は実際の改行として出力し、「\\n」などの文字列による改行表現は使用しない 
-※If / Thenは「その時点で実際に起きたこと・考えたこと」のみ記述する 
-※「〜すればよかった」「次は〜する」などの改善・未来の内容は記載しない（結果に含める） 
-If： 
-👀 状況：〇〇（実際に起きた事実） 
-🎯 狙い：〇〇（その時に考えていた意図） 
-Then： 
-⚡ 行動：〇〇（実際に取った行動のみ） 
-💬 具体例：〇〇（実際の発言・振る舞いのみ） 
-■ 結果（最重要） 
-・ユーザの発言内容をもとに、発言者の思考の流れが感じられる自然な独り言形式で整理すること 
-・要約は禁止（要点のみの箇条書き化も禁止） 
-▼表現ルール 
-・一文で完結させず、思考の流れがつながる文章にする 
-・主観・迷い・納得感の表現を適度に残す 
-・ただし同じ内容の繰り返しや言い直しは削除する 
-▼NG 
-・結論だけの短文化（議事録的表現） 
-・説明過多な整形（不自然にきれいな文章） 
-▼目標状態 
-・「本人が少しだけ言語化うまくなった状態」を再現すること 
-■ ステータス（上から優先して判定する） 
-①「失敗」「うまくいかなかった」など明確にネガティブ評価している場合： 　→「💡Not to do」と入力（※実験済みであっても最優先） 
-② 実験したことが明確な場合： 　→「☑️実験済」と入力 
-③ 実験していないことが明確な場合： 　→「🔒未実験」と入力
+  const prompt = `あなたは実験結果の管理アシスタント」です。 ユーザーが雑に語る「試したこと」を、事実ベースで構造化・評価し、再利用可能な形に整理してください。 ■ 絶対ルール（最優先） ユーザー未言及の情報は一切追加しない（推測・補完・具体化禁止） ■ 出力フォーマット（固定） Markdown表： 日付 / スキル / ミニスキル / If (トリガー) / Then (アクション) / 結果 / ステータス ■ 構造化ルール ▼ If / Then（最重要） 情報は削らず整理する ※改行は実際の改行として出力し、「\\n」などの文字列による改行表現は使用しない ※If / Thenは「その時点で実際に起きたこと・考えたこと」のみ記述する ※「〜すればよかった」「次は〜する」などの改善・未来の内容は記載しない（結果に含める） If： 👀 状況：〇〇（実際に起きた事実） 🎯 狙い：〇〇（その時に考えていた意図） Then： ⚡ 行動：〇〇（実際に取った行動のみ） 💬 具体例：〇〇（実際の発言・振る舞いのみ） ■ 結果（最重要） ・ユーザの発言内容をもとに、発言者の思考の流れが感じられる自然な独り言形式で整理すること ・要約は禁止（要点のみの箇条書き化も禁止） ▼表現ルール ・一文で完結させず、思考の流れがつながる文章にする ・主観・迷い・納得感の表現を適度に残す ・ただし同じ内容の繰り返しや言い直しは削除する ▼NG ・結論だけの短文化（議事録的表現） ・説明過多な整形（不自然にきれいな文章） ▼目標状態 ・「本本人に少しだけ言語化うまくなった状態」を再現すること ■ ステータス（上から優先して判定する） ①「失敗」「うまくいかなかった」など明確にネガティブ評価している場合： 　→「💡Not to do」と入力（※実験済みであっても最優先） ② 実験したことが明確な場合： 　→「☑️実験済」と入力 ③ 実験していないことが明確な場合： 　→「🔒未実験」と入力
 
-【日付指定】日付列には「${dateStr}」と入れてください。
-【入力】
-${text}`;
+【日付指定】日付列には「${dateStr}」と入れてください。【入力】${text}`;
 
   const payload = { contents: [{ parts: [{ text: prompt }] }] };
-  const response = UrlFetchApp.fetch(url, {
+  return {
+    url: url,
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
-  });
-
-  const resText = response.getContentText();
-  const json = JSON.parse(resText);
-  if (json.error) {
-    console.error(resText);
-    return null;
-  }
-  return parseMarkdown(json.candidates[0].content.parts[0].text);
+  };
 }
 
 /**
- * 表データの解析
+ * 表データの解析 (変更なし)
  */
 function parseMarkdown(md) {
   return md.split('\n')
@@ -124,7 +109,7 @@ function parseMarkdown(md) {
 }
 
 /**
- * 実験シートの空行を探して書き込み
+ * 実験シートの空行を探して書き込み (変更なし)
  */
 function writeToExperimentSheet(sheet, data) {
   const colA = sheet.getRange("A:A").getValues();
