@@ -2,6 +2,7 @@
 const GEMINI_API_KEY = 'AIzaSyBV_NWM1r4Aiq1RaIrCttdfk0Dl8ihk8kA';
 const DIARY_SHEET = '1.日記';
 const EXP_SHEET = '2.実験';
+const CONTEXT_CELL = 'F1'; // 前提情報を入力するセル（2.実験シート）
 
 // モデル名は指定通り維持
 const MODEL_NAME = 'gemini-2.5-flash';
@@ -21,15 +22,18 @@ function processDiaryToExperiment() {
   const diarySheet = ss.getSheetByName(DIARY_SHEET);
   const expSheet = ss.getSheetByName(EXP_SHEET);
 
+  // --- 1. 前提情報（F1セル）を取得 ---
+  const contextInfo = expSheet.getRange(CONTEXT_CELL).getValue();
+
   const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 5).getValues();
 
-  // 1. 処理対象のデータをリストアップ
+  // 2. 処理対象のデータをリストアップ
   const targets = [];
   for (let i = 0; i < diaryData.length; i++) {
     const rowNum = i + 2;
     const date = diaryData[i][0];
-    const expMemo = diaryData[i][1]; // B列：実験
-    const cookMemo = diaryData[i][3]; // D列：料理
+    const expMemo = diaryData[i][1];   // B列：実験
+    const cookMemo = diaryData[i][3];  // D列：料理
     const status = String(diaryData[i][4]).trim();
 
     if ((expMemo || cookMemo) && status === "") {
@@ -44,14 +48,14 @@ function processDiaryToExperiment() {
     return;
   }
 
-  // 2. AIへのリクエストを一括作成
+  // 3. AIへのリクエストを一括作成（前提情報を引数に渡す）
   SpreadsheetApp.getActive().toast(`${targets.length}件を並列解析中...`, '🧪');
-  const requests = targets.map(t => createAiRequest(t.combinedInput, t.dateStr));
+  const requests = targets.map(t => createAiRequest(t.combinedInput, t.dateStr, contextInfo));
 
-  // 3. 一括送信
+  // 4. 一括送信
   const responses = UrlFetchApp.fetchAll(requests);
 
-  // 4. 結果をまとめて処理
+  // 5. 結果をまとめて処理
   let totalAdded = 0;
   const allResults = [];
 
@@ -71,7 +75,7 @@ function processDiaryToExperiment() {
     }
   });
 
-  // 5. 実験シートへ一括書き込み
+  // 6. 実験シートへ一括書き込み
   if (allResults.length > 0) {
     writeToExperimentSheet(expSheet, allResults);
   }
@@ -81,11 +85,15 @@ function processDiaryToExperiment() {
 
 /**
  * AIリクエストオブジェクトの生成
+ * 引数に contextInfo（前提情報）を追加しました
  */
-function createAiRequest(text, dateStr) {
+function createAiRequest(text, dateStr, contextInfo) {
   const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
-  const prompt = `あなたは実験結果の管理アシスタント」です。
-ユーザーが雑に語る「試したこと」を、事実ベースで構造化・評価し、再利用可能な形に整理してください。
+  
+  const prompt = `あなたは「実験結果の管理アシスタント」です。ユーザーが雑に語る「試したこと」を、事実ベースで構造化・評価し、再利用可能な形に整理してください。
+
+■ 前提知識（ユーザーの背景知識・独自の用語定義）
+${contextInfo}
 
 ■ 絶対ルール（最優先）
 ユーザー未言及の情報は一切追加しない（推測・補完・具体化禁止）
@@ -105,7 +113,7 @@ Then： ⚡ 行動：〇〇<br>💬 具体例：〇〇
 
 ■ 結果（最重要）
 ・ユーザの発言内容をもとに、発言者の思考の流れが感じられる自然な独り言形式で整理すること
-・要約は禁止（要点のみの箇条書き化も禁止）
+・要約は禁止（要点のみの箇取り化も禁止）
 ▼表現ルール
 ・一文で完結させず、思考の流れがつながる文章にする
 ・主観・迷い・納得感の表現を適度に残す
@@ -124,10 +132,16 @@ Then： ⚡ 行動：〇〇<br>💬 具体例：〇〇
 ③ 実験していないことが明確な場合：
 　→「🔒未実験」と入力
 
-【日付指定】日付列には「${dateStr}」と入れてください。
-【入力】${text}`;
+【日付指定】
+日付列には「${dateStr}」と入れてください。
 
-  const payload = { contents: [{ parts: [{ text: prompt }] }] };
+【入力】
+${text}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }]
+  };
+
   return {
     url: url,
     method: 'post',
@@ -153,7 +167,7 @@ function parseMarkdown(md) {
 }
 
 /**
- * 実験シートの空行を探して書き込み（折り返し設定を有効化）
+ * 実験シートの空行を探して書き込み
  */
 function writeToExperimentSheet(sheet, data) {
   const colA = sheet.getRange("A:A").getValues();
@@ -166,11 +180,9 @@ function writeToExperimentSheet(sheet, data) {
   }
 
   const range = sheet.getRange(row, 1, data.length, data[0].length);
-  
-  // データの書き込み
   range.setValues(data);
 
   // 見た目を美しく整える設定
-  range.setWrap(true);               // テキストを折り返して改行を表示
-  range.setVerticalAlignment("top"); // 長文でも見やすいよう上揃えに設定
+  range.setWrap(true); 
+  range.setVerticalAlignment("top");
 }
