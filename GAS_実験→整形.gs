@@ -15,7 +15,7 @@ function onOpen() {
 }
 
 /**
- * メイン処理（並列化版）
+ * メイン処理（並列化＋自動リトライ版）
  */
 function processDiaryToExperiment() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -44,23 +44,25 @@ function processDiaryToExperiment() {
   }
 
   if (targets.length === 0) {
-    SpreadsheetApp.getUi().alert('対象の未処理日記が見つかりませんでした。');
+    SpreadsheetApp.getUi().alert('対象‡の未処理日記が見つかりませんでした。');
     return;
   }
 
-  // 3. AIへのリクエストを一括作成（前提情報を引数に渡す）
+  // 3. AIへのリクエストを一括作成
   SpreadsheetApp.getActive().toast(`${targets.length}件を並列解析中...`, '🧪');
   const requests = targets.map(t => createAiRequest(t.combinedInput, t.dateStr, contextInfo));
 
-  // 4. 一括送信
-  const responses = UrlFetchApp.fetchAll(requests);
+  // 4. 一括送信（リトライ機能付き）
+  const responsesText = fetchWithRetry(requests);
 
   // 5. 結果をまとめて処理
   let totalAdded = 0;
   const allResults = [];
 
   targets.forEach((t, index) => {
-    const resText = responses[index].getContentText();
+    const resText = responsesText[index];
+    if (!resText) return; // リトライしても失敗したものはスキップ
+
     const json = JSON.parse(resText);
 
     if (!json.error && json.candidates && json.candidates[0].content.parts[0].text) {
@@ -84,8 +86,47 @@ function processDiaryToExperiment() {
 }
 
 /**
+ * リトライ機能付きの並列フェッチ
+ */
+function fetchWithRetry(requests, maxRetries = 3) {
+  let finalResponses = new Array(requests.length).fill(null);
+  let pendingIndices = requests.map((_, i) => i);
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (pendingIndices.length === 0) break;
+
+    // 2回目以降の試行前に待機
+    if (attempt > 0) {
+      const waitTime = Math.pow(2, attempt) * 1000; 
+      SpreadsheetApp.getActive().toast(`エラー発生のため再試行中 (${attempt}/${maxRetries})...`, '⏳');
+      Utilities.sleep(waitTime);
+    }
+
+    const currentRequests = pendingIndices.map(i => requests[i]);
+    const results = UrlFetchApp.fetchAll(currentRequests);
+    
+    let nextPendingIndices = [];
+    results.forEach((res, i) => {
+      const originalIndex = pendingIndices[i];
+      const code = res.getResponseCode();
+      
+      if (code === 200) {
+        finalResponses[originalIndex] = res.getContentText();
+      } else if (code === 429 || code === 500 || code === 503 || code === 504) {
+        // 一時的なエラー（レート制限やサーバー混雑）の場合のみリトライ対象にする
+        nextPendingIndices.push(originalIndex);
+      } else {
+        // 400エラーなど致命的なものはリトライせずログを残す
+        console.error(`HTTPエラー ${code}: ${res.getContentText()}`);
+      }
+    });
+    pendingIndices = nextPendingIndices;
+  }
+  return finalResponses;
+}
+
+/**
  * AIリクエストオブジェクトの生成
- * 引数に contextInfo（前提情報）を追加しました
  */
 function createAiRequest(text, dateStr, contextInfo) {
   const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
