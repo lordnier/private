@@ -1,5 +1,5 @@
 // 【設定】APIキーを入れてください
-const GEMINI_API_KEY = 'AIzaSyBV_NWM1r4Aiq1RaIrCttdfk0Dl8ihk8kA';
+const GEMINI_API_KEY = 'AIzaSyDDuzOgAblF6o0tThoEg-KAGiXnwfkoDqo';
 const DIARY_SHEET = '1.日記';
 const EXP_SHEET = '2.実験';
 const CONTEXT_CELL = 'F1'; // 前提情報を入力するセル（2.実験シート）
@@ -15,7 +15,7 @@ function onOpen() {
 }
 
 /**
- * メイン処理（並列化＋自動リトライ版）
+ * メイン処理（直列処理＋エラー詳細表示版）
  */
 function processDiaryToExperiment() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -24,7 +24,6 @@ function processDiaryToExperiment() {
 
   // --- 1. 前提情報（F1セル）を取得 ---
   const contextInfo = expSheet.getRange(CONTEXT_CELL).getValue();
-
   const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 5).getValues();
 
   // 2. 処理対象のデータをリストアップ
@@ -32,8 +31,8 @@ function processDiaryToExperiment() {
   for (let i = 0; i < diaryData.length; i++) {
     const rowNum = i + 2;
     const date = diaryData[i][0];
-    const expMemo = diaryData[i][1];   // B列：実験
-    const cookMemo = diaryData[i][3];  // D列：料理
+    const expMemo = diaryData[i][1];  // B列：実験
+    const cookMemo = diaryData[i][3]; // D列：料理
     const status = String(diaryData[i][4]).trim();
 
     if ((expMemo || cookMemo) && status === "") {
@@ -44,93 +43,112 @@ function processDiaryToExperiment() {
   }
 
   if (targets.length === 0) {
-    SpreadsheetApp.getUi().alert('対象‡の未処理日記が見つかりませんでした。');
+    SpreadsheetApp.getUi().alert('対象の未処理日記が見つかりませんでした。');
     return;
   }
 
-  // 3. AIへのリクエストを一括作成
-  SpreadsheetApp.getActive().toast(`${targets.length}件を並列解析中...`, '🧪');
-  const requests = targets.map(t => createAiRequest(t.combinedInput, t.dateStr, contextInfo));
-
-  // 4. 一括送信（リトライ機能付き）
-  const responsesText = fetchWithRetry(requests);
-
-  // 5. 結果をまとめて処理
+  // 3. 直列処理（1件ずつ実行）
   let totalAdded = 0;
   const allResults = [];
+  const errorLogs = [];
+  
+  SpreadsheetApp.getActive().toast(`${targets.length}件を順番に解析中...`, '🧪');
 
-  targets.forEach((t, index) => {
-    const resText = responsesText[index];
-    if (!resText) return; // リトライしても失敗したものはスキップ
-
-    const json = JSON.parse(resText);
-
-    if (!json.error && json.candidates && json.candidates[0].content.parts[0].text) {
-      const results = parseMarkdown(json.candidates[0].content.parts[0].text);
-      if (results && results.length > 0) {
-        allResults.push(...results);
-        diarySheet.getRange(t.rowNum, 5).setValue('済');
-        totalAdded += results.length;
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    const request = createAiRequest(t.combinedInput, t.dateStr, contextInfo);
+    
+    // 1件に対してリトライ機能付きで実行
+    const resText = fetchSingleWithRetry(request, t.dateStr, errorLogs);
+    
+    if (resText) {
+      try {
+        const json = JSON.parse(resText);
+        if (!json.error && json.candidates && json.candidates[0].content.parts[0].text) {
+          const results = parseMarkdown(json.candidates[0].content.parts[0].text);
+          if (results && results.length > 0) {
+            allResults.push(...results);
+            diarySheet.getRange(t.rowNum, 5).setValue('済');
+            totalAdded += results.length;
+          } else {
+            errorLogs.push(`[${t.dateStr}] AIの回答形式が不正（表が見つからない）`);
+          }
+        } else if (json.error) {
+          errorLogs.push(`[${t.dateStr}] AIエラー: ${json.error.message}`);
+        } else {
+          errorLogs.push(`[${t.dateStr}] 解析エラー: 回答が空です`);
+        }
+      } catch (e) {
+        errorLogs.push(`[${t.dateStr}] JSONパース失敗: ${e.toString()}`);
       }
-    } else {
-      console.error(`Error for ${t.dateStr}:`, resText);
     }
-  });
+    // APIのレート制限を考慮し、短時間の待機を入れる（必要に応じて調整）
+    Utilities.sleep(500); 
+  }
 
-  // 6. 実験シートへ一括書き込み
+  // 4. 実験シートへ一括書き込み
   if (allResults.length > 0) {
     writeToExperimentSheet(expSheet, allResults);
   }
 
-  SpreadsheetApp.getUi().alert(totalAdded > 0 ? `${totalAdded}件の実験を転記しました。` : '解析に失敗したか、有効なデータがありませんでした。');
-}
-
-/**
- * リトライ機能付きの並列フェッチ
- */
-function fetchWithRetry(requests, maxRetries = 3) {
-  let finalResponses = new Array(requests.length).fill(null);
-  let pendingIndices = requests.map((_, i) => i);
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (pendingIndices.length === 0) break;
-
-    // 2回目以降の試行前に待機
-    if (attempt > 0) {
-      const waitTime = Math.pow(2, attempt) * 1000; 
-      SpreadsheetApp.getActive().toast(`エラー発生のため再試行中 (${attempt}/${maxRetries})...`, '⏳');
-      Utilities.sleep(waitTime);
-    }
-
-    const currentRequests = pendingIndices.map(i => requests[i]);
-    const results = UrlFetchApp.fetchAll(currentRequests);
-    
-    let nextPendingIndices = [];
-    results.forEach((res, i) => {
-      const originalIndex = pendingIndices[i];
-      const code = res.getResponseCode();
-      
-      if (code === 200) {
-        finalResponses[originalIndex] = res.getContentText();
-      } else if (code === 429 || code === 500 || code === 503 || code === 504) {
-        // 一時的なエラー（レート制限やサーバー混雑）の場合のみリトライ対象にする
-        nextPendingIndices.push(originalIndex);
-      } else {
-        // 400エラーなど致命的なものはリトライせずログを残す
-        console.error(`HTTPエラー ${code}: ${res.getContentText()}`);
-      }
-    });
-    pendingIndices = nextPendingIndices;
+  // 5. 最終結果の報告
+  let finalMessage = `${totalAdded}件の実験を転記しました。\n`;
+  if (errorLogs.length > 0) {
+    finalMessage += `\n【失敗した処理 (${errorLogs.length}件)】\n` + errorLogs.join('\n');
   }
-  return finalResponses;
+  
+  SpreadsheetApp.getUi().alert(finalMessage);
 }
 
 /**
- * AIリクエストオブジェクトの生成
+ * 単一リクエストのリトライ機能付き実行（直列用）
+ */
+function fetchSingleWithRetry(request, dateStr, errorLogs, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        const waitTime = Math.pow(2, attempt) * 1000;
+        Utilities.sleep(waitTime);
+      }
+      
+      const res = UrlFetchApp.fetch(request.url, {
+        method: request.method,
+        contentType: request.contentType,
+        payload: request.payload,
+        muteHttpExceptions: true
+      });
+      
+      const code = res.getResponseCode();
+      if (code === 200) {
+        return res.getContentText();
+      } else {
+        const errorMsg = `HTTP ${code}: ${res.getContentText().substring(0, 100)}...`;
+        if (code === 429 || code >= 500) {
+          // リトライ可能なエラー
+          if (attempt === maxRetries) {
+            errorLogs.push(`[${dateStr}] 最大リトライ超過 (${errorMsg})`);
+          }
+          continue; 
+        } else {
+          // 致命的なエラー（400等）は即時終了
+          errorLogs.push(`[${dateStr}] 致命的エラー (${errorMsg})`);
+          return null;
+        }
+      }
+    } catch (e) {
+      if (attempt === maxRetries) {
+        errorLogs.push(`[${dateStr}] 通信失敗: ${e.toString()}`);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * AIリクエストオブジェクトの生成（プロンプト等は変更なし）
  */
 function createAiRequest(text, dateStr, contextInfo) {
   const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
-  
   const prompt = `あなたは「実験結果の管理アシスタント」です。ユーザーが雑に語る「試したこと」を、事実ベースで構造化・評価し、再利用可能な形に整理してください。
 
 ■ 前提知識（ユーザーの背景知識・独自の用語定義）
@@ -147,21 +165,26 @@ Markdown表：
 ■ 構造化ルール
 ▼ If / Then（最重要）
 情報は削らず整理する
-※セルの内部で改行が必要な箇所（アイコンの区切りなど）には、必ず「<br>」という文字列を使用してください。
+※セルの内部で改行が必要な箇所（アイコンの区切りなど）には、必ず「  <br>」という文字列を使用してください。
 ※実際の改行（リターンキー）はMarkdownテーブルの構造を壊すため、セル内では絶対に使用しないでください。
-If： 👀 状況：〇〇<br>🎯 狙い：〇〇
-Then： ⚡ 行動：〇〇<br>💬 具体例：〇〇
+If：
+👀 状況：〇〇  <br>🎯 狙い：〇〇
+Then：
+⚡ 行動：〇〇  <br>💬 具体例：〇〇
 
 ■ 結果（最重要）
 ・ユーザの発言内容をもとに、発言者の思考の流れが感じられる自然な独り言形式で整理すること
 ・要約は禁止（要点のみの箇取り化も禁止）
+
 ▼表現ルール
 ・一文で完結させず、思考の流れがつながる文章にする
 ・主観・迷い・納得感の表現を適度に残す
 ・ただし同じ内容の繰り返しや言い直しは削除する
+
 ▼NG
 ・結論だけの短文化（議事録的表現）
 ・説明過多な整形（不自然にきれいな文章）
+
 ▼目標状態
 ・「本人に少しだけ言語化うまくなった状態」を再現すること
 
@@ -187,28 +210,25 @@ ${text}`;
     url: url,
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
+    payload: JSON.stringify(payload)
   };
 }
 
 /**
- * 表データの解析（<br>をスプレッドシートの改行に置換）
+ * 表データの解析（変更なし）
  */
 function parseMarkdown(md) {
   return md.split('\n')
     .filter(line => line.includes('|') && !line.includes('---'))
     .map(line => {
-      // 各カラムを分割してトリミング
       const cols = line.split('|').map(c => c.trim()).filter((c, i, arr) => i !== 0 && i !== arr.length - 1);
-      // セル内の <br> をスプレッドシートの改行コード \n に置換
-      return cols.map(cell => cell.replace(/<br>/g, '\n'));
+      return cols.map(cell => cell.replace(/  <br>/g, '\n'));
     })
     .filter(cols => cols.length >= 7 && cols[0] !== '日付');
 }
 
 /**
- * 実験シートの空行を探して書き込み
+ * 実験シートの空行を探して書き込み（変更なし）
  */
 function writeToExperimentSheet(sheet, data) {
   const colA = sheet.getRange("A:A").getValues();
@@ -219,11 +239,8 @@ function writeToExperimentSheet(sheet, data) {
       break;
     }
   }
-
   const range = sheet.getRange(row, 1, data.length, data[0].length);
   range.setValues(data);
-
-  // 見た目を美しく整える設定
-  range.setWrap(true); 
+  range.setWrap(true);
   range.setVerticalAlignment("top");
 }
