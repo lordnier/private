@@ -1,8 +1,15 @@
+
 // 【設定】APIキーを入れてください
-const GEMINI_API_KEY = 'AIzaSyDDuzOgAblF6o0tThoEg-KAGiXnwfkoDqo';
+const GEMINI_API_KEY = 'AIzaSyBrFF-sDilGk3YY68tzMH4TC4uoq66U9M4';
 const DIARY_SHEET = '1.日記';
 const EXP_SHEET = '2.実験';
-const CONTEXT_CELL = 'F1'; // 前提情報を入力するセル（2.実験シート）
+const CONTEXT_INFO = `ユーザーは今後の実験文脈で「バリューランタン」という概念を使用する。構成要素は以下：
+・炎＝人生で重要な価値観
+・ガラス＝価値観を守るもの
+・ハンドル＝価値観を意識・継続するためのもの（手放すと価値観に反する行動が起きる）
+・ライト＝価値観を守った先にあるもの
+
+また、「ハンドルを手放す」とは、自分の価値観（例：圧倒的個人）に反する行動（例：誘われてラーメンに行く等）を取る状態を指す。`;
 
 // モデル名は指定通り維持
 const MODEL_NAME = 'gemini-2.5-flash';
@@ -23,7 +30,7 @@ function processDiaryToExperiment() {
   const expSheet = ss.getSheetByName(EXP_SHEET);
 
   // --- 1. 前提情報（F1セル）を取得 ---
-  const contextInfo = expSheet.getRange(CONTEXT_CELL).getValue();
+  const contextInfo = CONTEXT_INFO;
   const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 5).getValues();
 
   // 2. 処理対象のデータをリストアップ
