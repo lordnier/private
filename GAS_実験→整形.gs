@@ -1,6 +1,5 @@
-
 // 【設定】APIキーを入れてください
-const GEMINI_API_KEY = 'AIzaSyBrFF-sDilGk3YY68tzMH4TC4uoq66U9M4';
+const GEMINI_API_KEY = 'AIzaSyB-FC0-PKMI-M6UoMoNbZTRc1ZNWWEI-a0';
 const DIARY_SHEET = '1.日記';
 const EXP_SHEET = '2.実験';
 const CONTEXT_INFO = `ユーザーは今後の実験文脈で「バリューランタン」という概念を使用する。構成要素は以下：
@@ -197,7 +196,7 @@ Then：
 
 ■ ステータス（上から優先して判定する）
 ①「失敗」「うまくいかなかった」など明確にネガティブ評価している場合：
-　→「💡Not to do」と入力
+　→「🏆学習」と入力
 ② 実験したことが明確な場合：
 　→「☑️実験済」と入力
 ③ 実験していないことが明確な場合：
