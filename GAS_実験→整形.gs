@@ -1,5 +1,6 @@
+
 // 【設定】APIキーを入れてください
-const GEMINI_API_KEY = 'AIzaSyB-FC0-PKMI-M6UoMoNbZTRc1ZNWWEI-a0';
+const GEMINI_API_KEY = 'AIzaSyBfgWvIHtZeKvS0FKWH_DZ1c5ApYLRtkBI';
 const DIARY_SHEET = '1.日記';
 const EXP_SHEET = '2.実験';
 const CONTEXT_INFO = `ユーザーは今後の実験文脈で「バリューランタン」という概念を使用する。構成要素は以下：
@@ -228,7 +229,7 @@ function parseMarkdown(md) {
     .filter(line => line.includes('|') && !line.includes('---'))
     .map(line => {
       const cols = line.split('|').map(c => c.trim()).filter((c, i, arr) => i !== 0 && i !== arr.length - 1);
-      return cols.map(cell => cell.replace(/  <br>/g, '\n'));
+      return cols.map(cell => cell.replace(/\s*<br\s*\/?>\s*/gi, '\n'));
     })
     .filter(cols => cols.length >= 7 && cols[0] !== '日付');
 }
