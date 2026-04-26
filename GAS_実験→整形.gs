@@ -1,8 +1,7 @@
-
 // 【設定】APIキーを入れてください
-const GEMINI_API_KEY = 'AIzaSyBfgWvIHtZeKvS0FKWH_DZ1c5ApYLRtkBI';
-const DIARY_SHEET = '1.日記';
-const EXP_SHEET = '2.実験';
+const GEMINI_API_KEY = 'AIzaSyDT3AFPrQqbq4op-hUMoJ24ade2sBsgsGM';
+const DIARY_SHEET = '1_1.日記';
+const EXP_SHEET = '1_2.実験';
 const CONTEXT_INFO = `ユーザーは今後の実験文脈で「バリューランタン」という概念を使用する。構成要素は以下：
 ・炎＝人生で重要な価値観
 ・ガラス＝価値観を守るもの
@@ -31,7 +30,7 @@ function processDiaryToExperiment() {
 
   // --- 1. 前提情報（F1セル）を取得 ---
   const contextInfo = CONTEXT_INFO;
-  const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 5).getValues();
+  const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 4).getValues();
 
   // 2. 処理対象のデータをリストアップ
   const targets = [];
@@ -40,7 +39,7 @@ function processDiaryToExperiment() {
     const date = diaryData[i][0];
     const expMemo = diaryData[i][1];  // B列：実験
     const cookMemo = diaryData[i][3]; // D列：料理
-    const status = String(diaryData[i][4]).trim();
+    const status = String(diaryData[i][2]).trim(); // C列：ステータス
 
     if ((expMemo || cookMemo) && status === "") {
       const dateStr = date instanceof Date ? Utilities.formatDate(date, "JST", "yyyy-MM-dd") : String(date);
@@ -75,7 +74,7 @@ function processDiaryToExperiment() {
           const results = parseMarkdown(json.candidates[0].content.parts[0].text);
           if (results && results.length > 0) {
             allResults.push(...results);
-            diarySheet.getRange(t.rowNum, 5).setValue('済');
+            diarySheet.getRange(t.rowNum, 3).setValue('済');
             totalAdded += results.length;
           } else {
             errorLogs.push(`[${t.dateStr}] AIの回答形式が不正（表が見つからない）`);
