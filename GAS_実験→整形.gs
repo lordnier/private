@@ -1,46 +1,80 @@
+// ========= ここだけ新しい実装：設定をシートから読み込む =========
+function loadConfig_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('Config'); // 設定用シート名は固定でConfig
 
-// 【設定】APIキーを入れてください
-const GEMINI_API_KEY = 'AIzaSyDT3AFPrQqbq4op-hUMoJ24ade2sBsgsGM';
-const DIARY_SHEET = '1_1.日記';
-const EXP_SHEET = '1_2.実験';
-const CONTEXT_INFO = `ユーザーは今後の実験文脈で「バリューランタン」という概念を使用する。構成要素は以下：
-・炎＝人生で重要な価値観
-・ガラス＝価値観を守るもの
-・ハンドル＝価値観を意識・継続するためのもの（手放すと価値観に反する行動が起きる）
-・ライト＝価値観を守った先にあるもの
+  if (!sheet) {
+    throw new Error('Config シートが見つかりません。シート名「Config」で作成してください。');
+  }
 
-また、「ハンドルを手放す」とは、自分の価値観（例：圧倒的個人）に反する行動（例：誘われてラーメンに行く等）を取る状態を指す。`;
+  // ヘッダー行(A1:B1) の下から、A列=キー, B列=値 で読む前提
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
 
-// モデル名は指定通り維持
-const MODEL_NAME = 'gemini-2.5-flash';
+  const config = {};
+  for (let i = 0; i < values.length; i++) {
+    const key = String(values[i][0]).trim();
+    const value = values[i][1];
+    if (!key) continue;
+    config[key] = value;
+  }
+
+  // 想定キーがなければエラーにする
+  const requiredKeys = ['GEMINI_API_KEY', 'DIARY_SHEET', 'EXP_SHEET', 'CONTEXT_INFO', 'MODEL_NAME'];
+  requiredKeys.forEach(k => {
+    if (!(k in config) || config[k] === '') {
+      throw new Error('Config シートに必須キー「' + k + '」の値が設定されていません。');
+    }
+  });
+
+  return config;
+}
+// ========= ここまで新しい実装 =========
+
 
 /**
  * 共通のメニュー作成関数
- * GASではプロジェクト内に1つしか onOpen を置けないため、ここで両方のメニューを作成します。
- * ※「実験.gs」側にある onOpen 関数は削除するか、名前を変更（例：onOpen_Exp）してください。
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
 
-  // --- 🧪実験管理メニュー（実験.gsの関数を呼び出す） ---
+  // --- 🧪実験管理メニュー ---
   ui.createMenu('🧪実験管理')
     .addItem('日記を解析して転記', 'processDiaryToExperiment')
     .addToUi();
 
-  // --- 🍳料理管理メニュー（料理.gsの関数を呼び出す） ---
+  // --- 🍳料理管理メニュー ---
   ui.createMenu('🍳料理管理')
     .addItem('料理ログを解析して転記', 'runCookingLogAnalysis')
     .addToUi();
 }
+
+
 /**
  * メイン処理（直列処理＋エラー詳細表示版）
  */
 function processDiaryToExperiment() {
+  // ★ここで毎回Configを読む（キャッシュしたいならグローバル変数に保持してもOK）
+  const config = loadConfig_();
+  const GEMINI_API_KEY = config.GEMINI_API_KEY;
+  const DIARY_SHEET = config.DIARY_SHEET;
+  const EXP_SHEET = config.EXP_SHEET;
+  const CONTEXT_INFO = config.CONTEXT_INFO;
+  const MODEL_NAME = config.MODEL_NAME;
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const diarySheet = ss.getSheetByName(DIARY_SHEET);
   const expSheet = ss.getSheetByName(EXP_SHEET);
 
-  // --- 1. 前提情報（F1セル）を取得 ---
+  if (!diarySheet) {
+    SpreadsheetApp.getUi().alert('日記シートが見つかりません: ' + DIARY_SHEET);
+    return;
+  }
+  if (!expSheet) {
+    SpreadsheetApp.getUi().alert('実験シートが見つかりません: ' + EXP_SHEET);
+    return;
+  }
+
+  // --- 1. 前提情報を取得 ---
   const contextInfo = CONTEXT_INFO;
   const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 4).getValues();
 
@@ -50,12 +84,13 @@ function processDiaryToExperiment() {
     const rowNum = i + 2;
     const date = diaryData[i][0];
     const expMemo = diaryData[i][1];  // B列：実験
-    const cookMemo = diaryData[i][3]; // D列：料理
     const status = String(diaryData[i][2]).trim(); // C列：ステータス
 
-    if ((expMemo || cookMemo) && status === "") {
-      const dateStr = date instanceof Date ? Utilities.formatDate(date, "JST", "yyyy-MM-dd") : String(date);
-      const combinedInput = `【日記・実験】\n${expMemo}\n\n【料理ログ】\n${cookMemo}`;
+    if (expMemo && status === "") {
+      const dateStr = date instanceof Date
+        ? Utilities.formatDate(date, "JST", "yyyy-MM-dd")
+        : String(date);
+      const combinedInput = `【日記・実験】\n${expMemo}`;
       targets.push({ rowNum, dateStr, combinedInput });
     }
   }
@@ -74,7 +109,7 @@ function processDiaryToExperiment() {
 
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
-    const request = createAiRequest(t.combinedInput, t.dateStr, contextInfo);
+    const request = createAiRequest(t.combinedInput, t.dateStr, contextInfo, MODEL_NAME, GEMINI_API_KEY);
     
     // 1件に対してリトライ機能付きで実行
     const resText = fetchSingleWithRetry(request, t.dateStr, errorLogs);
@@ -100,7 +135,6 @@ function processDiaryToExperiment() {
         errorLogs.push(`[${t.dateStr}] JSONパース失敗: ${e.toString()}`);
       }
     }
-    // APIのレート制限を考慮し、短時間の待機を入れる（必要に応じて調整）
     Utilities.sleep(500); 
   }
 
@@ -118,8 +152,10 @@ function processDiaryToExperiment() {
   SpreadsheetApp.getUi().alert(finalMessage);
 }
 
+
 /**
  * 単一リクエストのリトライ機能付き実行（直列用）
+ * （ここは元コードから一切変更なし）
  */
 function fetchSingleWithRetry(request, dateStr, errorLogs, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -142,13 +178,11 @@ function fetchSingleWithRetry(request, dateStr, errorLogs, maxRetries = 2) {
       } else {
         const errorMsg = `HTTP ${code}: ${res.getContentText().substring(0, 100)}...`;
         if (code === 429 || code >= 500) {
-          // リトライ可能なエラー
           if (attempt === maxRetries) {
             errorLogs.push(`[${dateStr}] 最大リトライ超過 (${errorMsg})`);
           }
           continue; 
         } else {
-          // 致命的なエラー（400等）は即時終了
           errorLogs.push(`[${dateStr}] 致命的エラー (${errorMsg})`);
           return null;
         }
@@ -162,10 +196,12 @@ function fetchSingleWithRetry(request, dateStr, errorLogs, maxRetries = 2) {
   return null;
 }
 
+
 /**
- * AIリクエストオブジェクトの生成（プロンプト等は変更なし）
+ * AIリクエストオブジェクトの生成
+ * → MODEL_NAME / API_KEY を引数でもらうようにしただけ
  */
-function createAiRequest(text, dateStr, contextInfo) {
+function createAiRequest(text, dateStr, contextInfo, MODEL_NAME, GEMINI_API_KEY) {
   const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
   const prompt = `あなたは「実験結果の管理アシスタント」です。ユーザーが雑に語る「試したこと」を、事実ベースで構造化・評価し、再利用可能な形に整理してください。
 
@@ -232,6 +268,7 @@ ${text}`;
   };
 }
 
+
 /**
  * 表データの解析（変更なし）
  */
@@ -244,6 +281,7 @@ function parseMarkdown(md) {
     })
     .filter(cols => cols.length >= 7 && cols[0] !== '日付');
 }
+
 
 /**
  * 実験シートの空行を探して書き込み（変更なし）
