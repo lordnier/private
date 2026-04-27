@@ -1,24 +1,19 @@
 /**
- * 【重要】変数名が重複しないよう、すべて「COOK_」を接頭辞に付けています。
- */
-const COOK_GEMINI_API_KEY = 'AIzaSyAW3jw_6HnYNYk4Uejed7oyvxujukyDN8o'; // 料理用のキー
-const COOK_DIARY_SHEET_NAME = '1_1.日記';
-const COOK_EXP_SHEET_NAME = '5_1.料理';
-const COOK_MODEL_NAME = 'gemini-2.5-flash';
-
-
-
-/**
  * 料理ログ解析のメイン処理
- * D列（料理ログ）を読み取り、E列（ステータス）が空のものを処理して「済」にします。
  */
 function runCookingLogAnalysis() {
+  const config = loadConfig_();
+  const GEMINI_API_KEY = config.GEMINI_API_KEY;
+  const MODEL_NAME = config.MODEL_NAME;
+  const DIARY_SHEET_NAME = config.DIARY_SHEET;
+  const COOK_EXP_SHEET_NAME = config.COOK_EXP_SHEET;
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const diarySheet = ss.getSheetByName(COOK_DIARY_SHEET_NAME);
+  const diarySheet = ss.getSheetByName(DIARY_SHEET_NAME);
   const cookExpSheet = ss.getSheetByName(COOK_EXP_SHEET_NAME);
 
   if (!diarySheet || !cookExpSheet) {
-    SpreadsheetApp.getUi().alert('シート名が見つかりません：' + COOK_DIARY_SHEET_NAME + " または " + COOK_EXP_SHEET_NAME);
+    SpreadsheetApp.getUi().alert('シート名が見つかりません：' + DIARY_SHEET_NAME + " または " + COOK_EXP_SHEET_NAME);
     return;
   }
 
@@ -59,7 +54,7 @@ function runCookingLogAnalysis() {
 
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
-    const request = buildCookingAiRequest(t.combinedInput, t.dateStr);
+    const request = buildCookingAiRequest(t.combinedInput, t.dateStr, MODEL_NAME, GEMINI_API_KEY);
     const resText = executeCookingApiWithRetry(request, t.dateStr, errorLogs);
     
     if (resText) {
@@ -96,35 +91,36 @@ function runCookingLogAnalysis() {
   SpreadsheetApp.getUi().alert(finalMessage);
 }
 
+
 /**
  * 料理用AIリクエスト生成
  */
-function buildCookingAiRequest(text, dateStr) {
-  const url = `https://generativelanguage.googleapis.com/v1/models/${COOK_MODEL_NAME}:generateContent?key=${COOK_GEMINI_API_KEY}`;
+function buildCookingAiRequest(text, dateStr, MODEL_NAME, GEMINI_API_KEY) {
+  const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
   
   const prompt = `あなたは「料理実験ログ整理アシスタント」です。
-ユーザーが雑に語る料理の実験内容を、事実ベースで整理し、表形式にまとめてください。
+    ユーザーが雑に語る料理の実験内容を、事実ベースで整理し、表形式にまとめてください。
 
-■ 絶対ルール
-- ユーザーが言っていない事実・手順・分量を一切補完しない
-- 曖昧な表現（適量・少し等）はそのまま残す
-- **重要：Markdownテーブル内での改行制御**
-  - セル内で改行が必要な場合は、必ず「  <br>」という文字列を使用してください。実際の改行コードは絶対に使用禁止。
+    ■ 絶対ルール
+    - ユーザーが言っていない事実・手順・分量を一切補完しない
+    - 曖昧な表現（適量・少し等）はそのまま残す
+    - **重要：Markdownテーブル内での改行制御**
+      - セル内で改行が必要な場合は、必ず「  <br>」という文字列を使用してください。実際の改行コードは絶対に使用禁止。
 
-■ 出力フォーマット
-Markdown表：
-日付 | ジャンル | 主食材 | 料理名 | レシピ | 結果 | 点数 | ステータス | 次のレシピ | 改善意図
+    ■ 出力フォーマット
+    Markdown表：
+    日付 | ジャンル | 主食材 | 料理名 | レシピ | 結果 | 点数 | ステータス | 次のレシピ | 改善意図
 
-■ 各項目のルール
-▼ レシピ：【材料】箇条書き、【手順】番号付き。間は「  <br><br>」で区切る。
-▼ 結果：自然な独り言形式。要約禁止。主観や納得感を残す。
-▼ 点数：発言があれば記載（10点満点）。なければ空欄。
-▼ ステータス：失敗なら「🏆学習」、成功・実験済なら「☑️実験済」。
-▼ 次のレシピ：そのまま再現できる具体的な材料と手順。改善は原則1要素のみ。
-▼ 改善意図：なぜその改善をしたか、科学的・料理的根拠を含めて説明。不健康な改善は禁止。
+    ■ 各項目のルール
+    ▼ レシピ：【材料】箇条書き、【手順】番号付き。間は「  <br><br>」で区切る。
+    ▼ 結果：自然な独り言形式。要約禁止。主観や納得感を残す。
+    ▼ 点数：発言があれば記載（10点満点）。なければ空欄。
+    ▼ ステータス：失敗なら「🏆学習」、成功・実験済なら「☑️実験済」。
+    ▼ 次のレシピ：そのまま再現できる具体的な材料と手順。改善は原則1要素のみ。
+    ▼ 改善意図：なぜその改善をしたか、科学的・料理的根拠を含めて説明。不健康な改善は禁止。
 
-【日付指定】日付列には「${dateStr}」と入れてください。
-【入力】\n${text}`;
+    【日付指定】日付列には「${dateStr}」と入れてください。
+    【入力】\n${text}`;
 
   const payload = { contents: [{ parts: [{ text: prompt }] }] };
   return {
