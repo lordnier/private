@@ -1,3 +1,14 @@
+
+// どの .gs ファイルに置いてもOK（実験.gsでも料理.gsでも可）
+function runAllDailyTasks() {
+  // 1. 実験管理
+  processDiaryToExperiment();        // 実験.gs 側のメイン関数
+
+  // 2. 料理管理
+  runCookingLogAnalysis();   // 料理.gs 側のメイン関数
+}
+
+
 /**
  * Configシートから共通設定を読み込む
  * A列=キー, B列=値
@@ -39,19 +50,12 @@ function loadConfig_() {
 // ========= 実験用：メイン処理 =========
 
 /**
- * 共通のメニュー作成関数
+ * メニュー作成関数
  */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
-
-  // --- 🧪実験管理メニュー ---
-  ui.createMenu('🧪実験管理')
-    .addItem('日記を解析して転記', 'processDiaryToExperiment')
-    .addToUi();
-
-  // --- 🍳料理管理メニュー ---
-  ui.createMenu('🍳料理管理')
-    .addItem('料理ログを解析して転記', 'runCookingLogAnalysis')
+  ui.createMenu('🧪実験記録')
+    .addItem('実験＋料理をまとめて実行', 'runAllDailyTasks')
     .addToUi();
 }
 
