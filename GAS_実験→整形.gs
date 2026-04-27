@@ -1,15 +1,16 @@
-// ========= ここだけ新しい実装：設定をシートから読み込む =========
+/**
+ * Configシートから共通設定を読み込む
+ * A列=キー, B列=値
+ */
 function loadConfig_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('Config'); // 設定用シート名は固定でConfig
+  const sheet = ss.getSheetByName('Config');
 
   if (!sheet) {
     throw new Error('Config シートが見つかりません。シート名「Config」で作成してください。');
   }
 
-  // ヘッダー行(A1:B1) の下から、A列=キー, B列=値 で読む前提
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
-
   const config = {};
   for (let i = 0; i < values.length; i++) {
     const key = String(values[i][0]).trim();
@@ -18,8 +19,14 @@ function loadConfig_() {
     config[key] = value;
   }
 
-  // 想定キーがなければエラーにする
-  const requiredKeys = ['GEMINI_API_KEY', 'DIARY_SHEET', 'EXP_SHEET', 'CONTEXT_INFO', 'MODEL_NAME'];
+  const requiredKeys = [
+    'GEMINI_API_KEY',
+    'MODEL_NAME',
+    'DIARY_SHEET',
+    'EXP_SHEET',
+    'COOK_EXP_SHEET',
+    'CONTEXT_INFO'
+  ];
   requiredKeys.forEach(k => {
     if (!(k in config) || config[k] === '') {
       throw new Error('Config シートに必須キー「' + k + '」の値が設定されていません。');
@@ -28,8 +35,8 @@ function loadConfig_() {
 
   return config;
 }
-// ========= ここまで新しい実装 =========
 
+// ========= 実験用：メイン処理 =========
 
 /**
  * 共通のメニュー作成関数
@@ -51,9 +58,7 @@ function onOpen() {
 
 /**
  * メイン処理（直列処理＋エラー詳細表示版）
- */
-function processDiaryToExperiment() {
-  // ★ここで毎回Configを読む（キャッシュしたいならグローバル変数に保持してもOK）
+ */function processDiaryToExperiment() {
   const config = loadConfig_();
   const GEMINI_API_KEY = config.GEMINI_API_KEY;
   const DIARY_SHEET = config.DIARY_SHEET;
@@ -74,17 +79,15 @@ function processDiaryToExperiment() {
     return;
   }
 
-  // --- 1. 前提情報を取得 ---
   const contextInfo = CONTEXT_INFO;
   const diaryData = diarySheet.getRange(2, 1, diarySheet.getLastRow() - 1, 4).getValues();
 
-  // 2. 処理対象のデータをリストアップ
   const targets = [];
   for (let i = 0; i < diaryData.length; i++) {
     const rowNum = i + 2;
     const date = diaryData[i][0];
-    const expMemo = diaryData[i][1];  // B列：実験
-    const status = String(diaryData[i][2]).trim(); // C列：ステータス
+    const expMemo = diaryData[i][1];
+    const status = String(diaryData[i][2]).trim();
 
     if (expMemo && status === "") {
       const dateStr = date instanceof Date
@@ -100,7 +103,6 @@ function processDiaryToExperiment() {
     return;
   }
 
-  // 3. 直列処理（1件ずつ実行）
   let totalAdded = 0;
   const allResults = [];
   const errorLogs = [];
@@ -109,9 +111,13 @@ function processDiaryToExperiment() {
 
   for (let i = 0; i < targets.length; i++) {
     const t = targets[i];
-    const request = createAiRequest(t.combinedInput, t.dateStr, contextInfo, MODEL_NAME, GEMINI_API_KEY);
-    
-    // 1件に対してリトライ機能付きで実行
+    const request = createAiRequest(
+      t.combinedInput,
+      t.dateStr,
+      contextInfo,
+      MODEL_NAME,
+      GEMINI_API_KEY
+    );
     const resText = fetchSingleWithRetry(request, t.dateStr, errorLogs);
     
     if (resText) {
@@ -138,21 +144,19 @@ function processDiaryToExperiment() {
     Utilities.sleep(500); 
   }
 
-  // 4. 実験シートへ一括書き込み
   if (allResults.length > 0) {
     writeToExperimentSheet(expSheet, allResults);
   }
 
-  // 5. 最終結果の報告
   let finalMessage = `${totalAdded}件の実験を転記しました。\n`;
   if (errorLogs.length > 0) {
     finalMessage += `\n【失敗した処理 (${errorLogs.length}件)】\n` + errorLogs.join('\n');
   }
-  
   SpreadsheetApp.getUi().alert(finalMessage);
 }
 
 
+// ========= 実験用：AIリクエスト生成（引数だけ変更） =========
 /**
  * 単一リクエストのリトライ機能付き実行（直列用）
  * （ここは元コードから一切変更なし）
@@ -205,56 +209,56 @@ function createAiRequest(text, dateStr, contextInfo, MODEL_NAME, GEMINI_API_KEY)
   const url = `https://generativelanguage.googleapis.com/v1/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
   const prompt = `あなたは「実験結果の管理アシスタント」です。ユーザーが雑に語る「試したこと」を、事実ベースで構造化・評価し、再利用可能な形に整理してください。
 
-■ 前提知識（ユーザーの背景知識・独自の用語定義）
-${contextInfo}
+    ■ 前提知識（ユーザーの背景知識・独自の用語定義）
+    ${contextInfo}
 
-■ 絶対ルール（最優先）
-ユーザー未言及の情報は一切追加しない（推測・補完・具体化禁止）
+    ■ 絶対ルール（最優先）
+    ユーザー未言及の情報は一切追加しない（推測・補完・具体化禁止）
 
-■ 出力フォーマット（固定）
-Markdown表：
+    ■ 出力フォーマット（固定）
+    Markdown表：
 
-日付 | スキル | ミニスキル | If (トリガー) | Then (アクション) | 結果 | ステータス
+    日付 | スキル | ミニスキル | If (トリガー) | Then (アクション) | 結果 | ステータス
 
-■ 構造化ルール
-▼ If / Then（最重要）
-情報は削らず整理する
-※セルの内部で改行が必要な箇所（アイコンの区切りなど）には、必ず「  <br>」という文字列を使用してください。
-※実際の改行（リターンキー）はMarkdownテーブルの構造を壊すため、セル内では絶対に使用しないでください。
-If：
-👀 状況：〇〇  <br>🎯 狙い：〇〇
-Then：
-⚡ 行動：〇〇  <br>💬 具体例：〇〇
+    ■ 構造化ルール
+    ▼ If / Then（最重要）
+    情報は削らず整理する
+    ※セルの内部で改行が必要な箇所（アイコンの区切りなど）には、必ず「  <br>」という文字列を使用してください。
+    ※実際の改行（リターンキー）はMarkdownテーブルの構造を壊すため、セル内では絶対に使用しないでください。
+    If：
+    👀 状況：〇〇  <br>🎯 狙い：〇〇
+    Then：
+    ⚡ 行動：〇〇  <br>💬 具体例：〇〇
 
-■ 結果（最重要）
-・ユーザの発言内容をもとに、発言者の思考の流れが感じられる自然な独り言形式で整理すること
-・要約は禁止（要点のみの箇取り化も禁止）
+    ■ 結果（最重要）
+    ・ユーザの発言内容をもとに、発言者の思考の流れが感じられる自然な独り言形式で整理すること
+    ・要約は禁止（要点のみの箇取り化も禁止）
 
-▼表現ルール
-・一文で完結させず、思考の流れがつながる文章にする
-・主観・迷い・納得感の表現を適度に残す
-・ただし同じ内容の繰り返しや言い直しは削除する
+    ▼表現ルール
+    ・一文で完結させず、思考の流れがつながる文章にする
+    ・主観・迷い・納得感の表現を適度に残す
+    ・ただし同じ内容の繰り返しや言い直しは削除する
 
-▼NG
-・結論だけの短文化（議事録的表現）
-・説明過多な整形（不自然にきれいな文章）
+    ▼NG
+    ・結論だけの短文化（議事録的表現）
+    ・説明過多な整形（不自然にきれいな文章）
 
-▼目標状態
-・「本人に少しだけ言語化うまくなった状態」を再現すること
+    ▼目標状態
+    ・「本人に少しだけ言語化うまくなった状態」を再現すること
 
-■ ステータス（上から優先して判定する）
-①「失敗」「うまくいかなかった」など明確にネガティブ評価している場合：
-　→「🏆学習」と入力
-② 実験したことが明確な場合：
-　→「☑️実験済」と入力
-③ 実験していないことが明確な場合：
-　→「🔒未実験」と入力
+    ■ ステータス（上から優先して判定する）
+    ①「失敗」「うまくいかなかった」など明確にネガティブ評価している場合：
+    　→「🏆学習」と入力
+    ② 実験したことが明確な場合：
+    　→「☑️実験済」と入力
+    ③ 実験していないことが明確な場合：
+    　→「🔒未実験」と入力
 
-【日付指定】
-日付列には「${dateStr}」と入れてください。
+    【日付指定】
+    日付列には「${dateStr}」と入れてください。
 
-【入力】
-${text}`;
+    【入力】
+    ${text}`;
 
   const payload = {
     contents: [{ parts: [{ text: prompt }] }]
