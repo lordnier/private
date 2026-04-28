@@ -110,7 +110,7 @@ function onOpen() {
   }
 
   if (targets.length === 0) {
-    SpreadsheetApp.getUi().alert('対象の未処理日記が見つかりませんでした。');
+    SpreadsheetApp.getActive().toast('対象の未処理日記が見つかりませんでした。', '実験管理', 5);
     return;
   }
 
@@ -163,7 +163,7 @@ function onOpen() {
   if (errorLogs.length > 0) {
     finalMessage += `\n【失敗した処理 (${errorLogs.length}件)】\n` + errorLogs.join('\n');
   }
-  SpreadsheetApp.getUi().alert(finalMessage);
+  SpreadsheetApp.getActive().toast(finalMessage, '実験管理', 10);  // 10秒表示
 }
 
 
