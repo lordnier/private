@@ -57,7 +57,14 @@ function onOpen() {
   ui.createMenu('🧪実験記録')
     .addItem('実験＋料理をまとめて実行', 'runAllDailyTasks')
     .addToUi();
+
+  ui.createMenu('Paleo Research')
+  .addItem('パレオな男をリサーチ', 'runPaleoResearch')
+  .addToUi();
+
+
 }
+
 
 
 /**
@@ -230,9 +237,9 @@ function createAiRequest(text, dateStr, contextInfo, MODEL_NAME, GEMINI_API_KEY)
     ※セルの内部で改行が必要な箇所（アイコンの区切りなど）には、必ず「  <br>」という文字列を使用してください。
     ※実際の改行（リターンキー）はMarkdownテーブルの構造を壊すため、セル内では絶対に使用しないでください。
     If：
-    👀 状況：〇〇  <br>🎯 狙い：〇〇
+    👀 状況：〇〇  <br>🎯 狙い：〇〇（実際に起きた事実）  
     Then：
-    ⚡ 行動：〇〇  <br>💬 具体例：〇〇
+    ⚡ 行動：〇〇  <br>💬 具体例：〇〇（その時に考えていた意図）  
 
     ■ 結果（最重要）
     ・ユーザの発言内容をもとに、発言者の思考の流れが感じられる自然な独り言形式で整理すること
