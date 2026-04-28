@@ -62,9 +62,12 @@ function onOpen() {
   .addItem('パレオな男をリサーチ', 'runPaleoResearch')
   .addToUi();
 
+  ui.createMenu('📝CSV出力')
+    .addItem('選択範囲をCSVダウンロード', 'exportSelectedRangeAsCSV')
+    .addToUi();
+
 
 }
-
 
 
 /**
