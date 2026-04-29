@@ -1,4 +1,3 @@
-
 function convertRowsAndExtractModel() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet(); // 必要ならシート名指定
@@ -11,7 +10,9 @@ function convertRowsAndExtractModel() {
 
   // G〜K列 (G=7, 5列: G,H,I,J,K)
   const gToK = sheet.getRange(startRow, 7, numRows, 5).getValues();
-  // L〜O列既存値（追加対象じゃない行の保持用）
+  // L列 (L=12) - 動画ファイル名用
+  const lColumn = sheet.getRange(startRow, 12, numRows, 1).getValues();
+  // L〜O列既存値(追加対象じゃない行の保持用)
   const existingLO = sheet.getRange(startRow, 12, numRows, 4).getValues();
   // P列既存値
   const existingP = sheet.getRange(startRow, 16, numRows, 1).getValues();
@@ -34,13 +35,21 @@ function convertRowsAndExtractModel() {
       const jHtml = textToHtml(j);
       const kHtml = markdownToHtml(k); // 表対応のMarkdown→HTML
 
-      outLO.push([hHtml, iHtml, jHtml, kHtml]);
+      // 2) L列の値を取得して [sound:xxx.mp4] フォーマットを作成
+      const lValue = lColumn[i][0];
+      let kHtmlWithSound = kHtml;
+      if (lValue && String(lValue).trim() !== '') {
+        const soundTag = '[sound:' + String(lValue).trim() + '.mp4]';
+        kHtmlWithSound = soundTag + '\n\n' + kHtml;
+      }
 
-      // 2) 模範英文抽出
+      outLO.push([hHtml, iHtml, jHtml, kHtmlWithSound]);
+
+      // 3) 模範英文抽出
       const modelText = extractModelTextFromHtml(kHtml);
       outP.push([modelText]);
 
-      // 3) この行の G列を「追加済み」に更新
+      // 4) この行の G列を「追加済み」に更新
       const rowIndex = startRow + i; // 実際の行番号
       sheet.getRange(rowIndex, 7).setValue('追加済み'); // 7列目 = G列
     } else {
