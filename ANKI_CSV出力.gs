@@ -23,3 +23,4 @@ function exportSelectedRangeAsCSV() {
   const ui = HtmlService.createHtmlOutput(html).setWidth(200).setHeight(50);
   SpreadsheetApp.getUi().showModalDialog(ui, 'CSV出力');
 }
+
