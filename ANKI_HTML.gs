@@ -1,3 +1,67 @@
+function transferFormulas() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const lastRow = sheet.getLastRow();
+  
+  // 5行目以降のデータがある行に対して処理
+  if (lastRow < 5) {
+    Logger.log('データがありません');
+    return;
+  }
+  
+  const startRow = 5;
+  const numRows = lastRow - startRow + 1;
+
+  // データ範囲を取得(A〜K列まで)
+  const dataRange = sheet.getRange(startRow, 1, numRows, 11);
+  const values = dataRange.getValues();
+
+  // ★ L列(フラグ)を取得
+  const lRange = sheet.getRange(startRow, 12, numRows, 1);
+  const lValues = lRange.getValues();
+
+  // 結果を格納する配列（M〜P）
+  const results = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const flag = lValues[i][0]; // L列の値
+    const rowNum = startRow + i; // 実際の行番号
+
+    // ★ 追加対象でない行は何もしない（M〜Pも書き換えない）
+    if (flag !== '追加対象') {
+      // 既存値を維持するため、その行の現在の M〜P を読み直して results に入れる
+      const existingMP = sheet.getRange(rowNum, 13, 1, 4).getValues()[0];
+      results.push(existingMP);
+      continue;
+    }
+
+    // M列: =B列 & A列
+    const colM = row[1] + row[0]; // B列(index 1) + A列(index 0)
+    
+    // N列: ="【部屋】" & G列 & CHAR(10) & "【場所】" & H列
+    const colN = "【部屋】" + row[6] + "\n" + "【場所】" + row[7]; // G列(index 6), H列(index 7)
+    
+    // O列: =D列 & CHAR(10) & CHAR(10) & E列
+    const colO = row[3] + "\n\n" + row[4]; // D列(index 3), E列(index 4)
+    
+    // P列: =K列
+    const colP = row[10]; // K列(index 10)
+    
+    results.push([colM, colN, colO, colP]);
+
+    // ★ 実行完了したら L列を「追加済み」に更新
+    sheet.getRange(rowNum, 12).setValue('追加済み');
+  }
+  
+  // M5〜P列に一括書き込み
+  sheet.getRange(startRow, 13, results.length, 4).setValues(results);
+  
+  // ★ 転記完了後、自動的に次の処理を実行
+  convertRowsAndExtractModel();
+}
+
+
+
 function convertRowsAndExtractModel() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getActiveSheet(); // 必要ならシート名指定
@@ -8,61 +72,57 @@ function convertRowsAndExtractModel() {
   const startRow = 5;
   const numRows = lastRow - startRow + 1;
 
-  // G〜K列 (G=7, 5列: G,H,I,J,K)
-  const gToK = sheet.getRange(startRow, 7, numRows, 5).getValues();
-  // L列 (L=12) - 動画ファイル名用
-  const lColumn = sheet.getRange(startRow, 12, numRows, 1).getValues();
-  // L〜O列既存値(追加対象じゃない行の保持用)
-  const existingLO = sheet.getRange(startRow, 12, numRows, 4).getValues();
-  // P列既存値
-  const existingP = sheet.getRange(startRow, 16, numRows, 1).getValues();
+  // ★ M〜P列 (M=13, 4列: M,N,O,P)
+  const mToP = sheet.getRange(startRow, 13, numRows, 4).getValues();
+  // ★ Q列既存値
+  const existingQ = sheet.getRange(startRow, 17, numRows, 1).getValues();
 
-  const outLO = [];
-  const outP = [];
+  const outMP = [];
+  const outQ = [];
 
-  for (let i = 0; i < gToK.length; i++) {
-    const row = gToK[i];
-    const flag = row[0];   // G
-    const h = row[1];      // H
-    const iCol = row[2];   // I
-    const j = row[3];      // J
-    const k = row[4];      // K (Markdown)
+  for (let i = 0; i < mToP.length; i++) {
+    const row = mToP[i];
+    const m = row[0];            // M
+    const n = row[1];            // N
+    const o = row[2];            // O
+    const p = row[3];            // P (Markdown)
 
-    if (flag === '追加対象') {
-      // 1) HTML 変換
-      const hHtml = textToHtml(h);
-      const iHtml = textToHtml(iCol);
-      const jHtml = textToHtml(j);
-      const kHtml = markdownToHtml(k); // 表対応のMarkdown→HTML
-
-      // 2) L列の値を取得して [sound:xxx.mp4] フォーマットを作成
-      const lValue = lColumn[i][0];
-      let kHtmlWithSound = kHtml;
-      if (lValue && String(lValue).trim() !== '') {
-        const soundTag = '[sound:' + String(lValue).trim() + '.mp4]';
-        kHtmlWithSound = soundTag + '\n\n' + kHtml;
-      }
-
-      outLO.push([hHtml, iHtml, jHtml, kHtmlWithSound]);
-
-      // 3) 模範英文抽出
-      const modelText = extractModelTextFromHtml(kHtml);
-      outP.push([modelText]);
-
-      // 4) この行の G列を「追加済み」に更新
-      const rowIndex = startRow + i; // 実際の行番号
-      sheet.getRange(rowIndex, 7).setValue('追加済み'); // 7列目 = G列
-    } else {
-      // 追加対象でない行は既存の値を維持
-      outLO.push(existingLO[i]);
-      outP.push(existingP[i]);
+    // ★ M〜P が空行（未設定）の場合は何もせず既存値を維持
+    if (!m && !n && !o && !p) {
+      outMP.push(row);
+      outQ.push(existingQ[i]);
+      continue;
     }
+
+    // 1) HTML 変換
+    const mHtml = textToHtml(m);
+    const nHtml = textToHtml(n);
+    const oHtml = textToHtml(o);
+    const pHtml = markdownToHtml(p); // 表対応のMarkdown→HTML
+
+    // 2) 動画ファイル名の取得（★ M列の値を使う）
+    const mValue = row[0];  // row[0] は M列（mToP の先頭列）
+    let pHtmlWithSound = pHtml;
+    if (mValue && String(mValue).trim() !== '') {
+      // M列に「親切1」などのファイル名だけが入っている前提
+      const soundTag = '[sound:' + String(mValue).trim() + '.mp4]';
+      pHtmlWithSound = soundTag + '\n\n' + pHtml;
+    }
+
+    // ★ M〜P を上書き出力
+    outMP.push([mHtml, nHtml, oHtml, pHtmlWithSound]);
+
+    // 3) 模範英文抽出（P列のHTMLから）
+    const modelText = extractModelTextFromHtml(pHtml);
+    outQ.push([modelText]);
   }
 
-  // L〜O, P に書き込み
-  sheet.getRange(startRow, 12, numRows, 4).setValues(outLO); // L〜O
-  sheet.getRange(startRow, 16, numRows, 1).setValues(outP);   // P
+  // ★ M〜P, Q に書き込み
+  sheet.getRange(startRow, 13, numRows, 4).setValues(outMP); // M〜P
+  sheet.getRange(startRow, 17, numRows, 1).setValues(outQ);   // Q
 }
+
+
 
 function textToHtml(text) {
   if (text == null) return '';
@@ -74,6 +134,7 @@ function textToHtml(text) {
   s = s.replace(/\r\n|\r|\n/g, '<br>');
   return s;
 }
+
 
 // テーブル対応版 Markdown → HTML
 function markdownToHtml(md) {
@@ -94,7 +155,7 @@ function markdownToHtml(md) {
   // 太字・斜体・インラインコード
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/`([^`]+)`/g, 'de>$1</code>');
 
   // 区切り線
   s = s.replace(/^\s*---\s*$/gm, '<hr>');
@@ -104,6 +165,7 @@ function markdownToHtml(md) {
 
   return s;
 }
+
 
 function convertMarkdownTables(text) {
   const lines = text.split(/\r\n|\r|\n/);
@@ -173,6 +235,7 @@ function convertMarkdownTables(text) {
   return outLines.join('\n');
 }
 
+
 function splitMarkdownRow(line) {
   let inner = line.trim();
   if (inner.startsWith('|')) inner = inner.slice(1);
@@ -182,12 +245,14 @@ function splitMarkdownRow(line) {
   return cells;
 }
 
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
 
 // 「✅ 模範英文」部分だけ抽出
 function extractModelTextFromHtml(html) {
@@ -211,9 +276,4 @@ function extractModelTextFromHtml(html) {
   s = s.trim();
 
   return s;
-}
-
-// 既存の名前で呼ばれても動くようにラッパーを作る
-function convertRowsToHtml() {
-  convertRowsAndExtractModel();
 }
