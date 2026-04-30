@@ -162,12 +162,19 @@ function executeCookingApiWithRetry(request, dateStr, errorLogs, maxRetries = 2)
  */
 function parseCookingMarkdownTable(md) {
   return md.split('\n')
-    .filter(line => line.includes('|') && !line.includes('---'))
+    // 区切り行（---だけの行）をより厳密に除外
+    .filter(line => line.includes('|') && !/^[-\s|:]+$/.test(line))
     .map(line => {
-      const cols = line.split('|').map(c => c.trim()).filter((c, i, arr) => i !== 0 && i !== arr.length - 1);
+      const cols = line.split('|')
+        .map(c => c.trim())
+        // 先頭と末尾の空要素（テーブル両端の | ）を除去
+        .filter((c, i, arr) => i !== 0 && i !== arr.length - 1);
+
+      // <br> を実際の改行に戻す
       return cols.map(cell => cell.replace(/\s*<br\s*\/?>\s*/gi, '\n'));
     })
-    .filter(cols => cols.length >= 10 && cols[0] !== '日付');
+    // 列数条件を少しゆるめる（最低8列あればOKとする）
+    .filter(cols => cols.length >= 8 && cols[0] !== '日付');
 }
 
 /**
