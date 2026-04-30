@@ -44,9 +44,14 @@ function transferFormulas() {
     // O列: =D列 & CHAR(10) & CHAR(10) & E列
     const colO = row[3] + "\n\n" + row[4]; // D列(index 3), E列(index 4)
     
-    // P列: =K列
-    const colP = row[10]; // K列(index 10)
-    
+    // P列: ="【内装】"&$I5&CHAR(10)&"【物体】"&$J5&CHAR(10)&"────"&CHAR(10)&$K5
+    const colP =
+      "\n" +    
+      "【内装】" + row[8] + "\n" +
+      "【物体】" + row[9] + "\n" +
+      "────" + "\n" +
+      row[10];
+
     results.push([colM, colN, colO, colP]);
 
     // ★ 実行完了したら L列を「追加済み」に更新
@@ -59,7 +64,6 @@ function transferFormulas() {
   // ★ 転記完了後、自動的に次の処理を実行
   convertRowsAndExtractModel();
 }
-
 
 
 function convertRowsAndExtractModel() {
