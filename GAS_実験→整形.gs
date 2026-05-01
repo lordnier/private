@@ -58,16 +58,17 @@ function onOpen() {
     .addItem('実験＋料理をまとめて実行', 'runAllDailyTasks')
     .addToUi();
 
-  ui.createMenu('Paleo Research')
-  .addItem('パレオな男をリサーチ', 'runPaleoResearch')
-  .addToUi();
 
-  ui.createMenu('📝CSV出力')
-    .addItem('選択範囲をCSVダウンロード', 'exportSelectedRangeAsCSV')
+  ui.createMenu('📝ANKI化')
+    .addItem('①-1 HTML変換_記憶の宮殿', 'transferFormulas')
+    .addItem('①-2 HTML変換_イメトレ', 'copyBDtoEG_forAnki')
+    .addItem('②選択範囲をCSVダウンロード', 'exportSelectedRangeAsCSV')
+    .addItem('③選択セルをMiniMaxでMP3化', 'generateTTSForSelection')
     .addToUi();
 
 
 }
+
 
 
 /**

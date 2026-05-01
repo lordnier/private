@@ -124,6 +124,7 @@ function convertRowsAndExtractModel() {
   // ★ M〜P, Q に書き込み
   sheet.getRange(startRow, 13, numRows, 4).setValues(outMP); // M〜P
   sheet.getRange(startRow, 17, numRows, 1).setValues(outQ);   // Q
+
 }
 
 
@@ -278,6 +279,78 @@ function extractModelTextFromHtml(html) {
   s = s.replace(/<br\s*\/?>/gi, '\n');
   s = s.replace(/<[^>]+>/g, '');
   s = s.trim();
+
+  return s;
+}
+
+
+
+/**
+ * B〜D列が空でない行だけ、
+ * セル内改行を <br> に変換しつつHTMLエスケープして
+ * E〜G列に転記する（Ankiインポート用）。
+ */
+function copyBDtoEG_forAnki() {
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const startRow = 2; // データ開始行（必要に応じて変更）
+  const numRows = lastRow - startRow + 1;
+
+  // B〜D列(2〜4列目)を取得
+  const srcRange = sheet.getRange(startRow, 2, numRows, 3);
+  const srcValues = srcRange.getValues();
+
+  const outValues = [];
+
+  for (let i = 0; i < numRows; i++) {
+    const b = srcValues[i][0];
+    const c = srcValues[i][1];
+    const d = srcValues[i][2];
+
+    // B〜Dのどれか1つでも入っていたら対象
+    const hasAny =
+      (b !== '' && b != null) ||
+      (c !== '' && c != null) ||
+      (d !== '' && d != null);
+
+    if (hasAny) {
+      outValues.push([
+        textToHtmlForAnki_(b),
+        textToHtmlForAnki_(c),
+        textToHtmlForAnki_(d),
+      ]);
+    } else {
+      // すべて空 → E〜Gも空（既存維持したいならここを変える）
+      outValues.push(['', '', '']);
+    }
+  }
+
+  // E〜G列(5〜7列目)に一括書き込み
+  const dstRange = sheet.getRange(startRow, 5, numRows, 3);
+  dstRange.setValues(outValues);
+}
+
+/**
+ * Anki向け：テキストをHTML用に変換
+ * - 特殊文字エスケープ
+ * - 改行を <br> に変換
+ */
+function textToHtmlForAnki_(value) {
+  if (value == null) return '';
+  let s = String(value);
+
+  // 特殊文字エスケープ（タグとして解釈させたくない部分を守る）
+  s = s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  // スプレッドシートの改行コードを <br> に変換（Ankiで改行として表示）[cite:10]
+  s = s.replace(/\r\n|\r|\n/g, '<br>');
 
   return s;
 }
