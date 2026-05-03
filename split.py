@@ -27,14 +27,20 @@ def split_video_lossless(input_file: str, segment_duration: int = 20) -> None:
     cmd = [
         ffmpeg_path,
         '-i', input_file,
-        '-c', 'copy',
+        '-c:v', 'libx264',  # 映像を再エンコード
+        '-preset', 'fast',  # エンコード速度(ultrafast/fast/medium)
+        '-crf', '18',  # 品質(18=ほぼ劣化なし)
+        '-c:a', 'copy',  # 音声はコピー
+        '-force_key_frames', f'expr:gte(t,n_forced*{segment_duration})',
         '-f', 'segment',
         '-segment_time', str(segment_duration),
         '-reset_timestamps', '1',
+        '-avoid_negative_ts', 'make_zero',
         output_pattern
     ]
 
     print(f"処理開始: {input_file}")
+    print(f"※映像を再エンコードするため時間がかかります")
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode == 0:
@@ -50,7 +56,7 @@ segment_duration = simpledialog.askinteger(
     "分割間隔の指定",
     "何秒間隔で区切りますか？",
     minvalue=1,
-    initialvalue=15
+    initialvalue=20
 )
 
 if segment_duration is None:
