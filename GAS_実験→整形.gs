@@ -320,18 +320,16 @@ function parseMarkdown(md) {
 
 
 /**
- * 実験シートの空行を探して書き込み（変更なし）
+ * 実験シートに常に一番下へ追記する版
  */
 function writeToExperimentSheet(sheet, data) {
-  const colA = sheet.getRange("A:A").getValues();
-  let row = 5;
-  for (let i = 4; i < colA.length; i++) {
-    if (String(colA[i][0]).trim() === "") {
-      row = i + 1;
-      break;
-    }
-  }
-  const range = sheet.getRange(row, 1, data.length, data[0].length);
+  // シートの最終行を取得
+  const lastRow = sheet.getLastRow();
+
+  // ヘッダなどを守るため、最低でも5行目以降に書く
+  const startRow = Math.max(lastRow + 1, 5);
+
+  const range = sheet.getRange(startRow, 1, data.length, data[0].length);
   range.setValues(data);
   range.setWrap(true);
   range.setVerticalAlignment("top");
