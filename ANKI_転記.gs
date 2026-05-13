@@ -14,6 +14,7 @@ function fillForAnki() {
   const existingNV = sheet.getRange(startRow, 14, numRows, 9).getValues(); // N〜V (14〜22列目)
 
   const outNV = [];
+  const outFlags = [];  // ★ 追加：ステータスを書き戻す用
 
   for (let i = 0; i < numRows; i++) {
     const flag = (flags[i][0] || '').toString();
@@ -52,17 +53,27 @@ function fillForAnki() {
 
       // N〜V の 9 列ぶんを配列で追加
       outNV.push([colN, colO, colP, colQ, colR, colS, colT, colU, colV]);
+
+      // ★ ここでフラグを「追加済み」に変更
+      outFlags.push(['追加済み']);
+
     } else {
       // 追加対象でない行は既存の N〜V を維持
       outNV.push(existingNV[i]);
+
+      // ★ フラグもそのまま維持
+      outFlags.push([flag]);
     }
   }
 
   // N〜V 列に一括書き込み
   sheet.getRange(startRow, 14, numRows, 9).setValues(outNV);
+
+  // ★ M列（ステータス）を一括書き込み
+  sheet.getRange(startRow, 13, numRows, 1).setValues(outFlags);
+
   extractModelSentencesToColumnW();
 }
-
 
 
 function extractModelSentencesToColumnW() {
