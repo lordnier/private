@@ -22,7 +22,7 @@ Advise Ryo using traceable facts. Coordinate existing capabilities; do not becom
 
 Use the minimum necessary inputs:
 
-- For current assignments, completed work, blockers, or meeting-derived task candidates, use `track-work-context`.
+- For current assignments, completed work, blockers, Jira cache or pasted Jira tasks, and meeting-derived task candidates, use `track-work-context`.
 - For RIKEN requirements, decisions, direction, and source authority, use `riken-project-sources`.
 - Inspect repository state only when implementation evidence is relevant. Treat it as implementation evidence, not agreed requirements.
 

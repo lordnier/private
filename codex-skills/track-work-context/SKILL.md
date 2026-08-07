@@ -1,6 +1,6 @@
 ---
 name: track-work-context
-description: Extract and maintain Ryo's work context from meeting minutes, direct instructions, task lists, decisions, and work results while strictly separating explicit evidence, Ryo-confirmed facts, pending candidates, and AI inference. Use when Ryo asks what he is responsible for, shares meeting notes to identify action items, reports task progress or completion, asks what became possible after prior work, or wants to update and review his current work state without inventing context.
+description: Extract and maintain Ryo's work context from meeting minutes, Jira issues or pasted Jira snapshots, direct instructions, task lists, decisions, and work results while strictly separating explicit evidence, Ryo-confirmed facts, pending candidates, and AI inference. Use when Ryo asks what he is responsible for, shares Jira tasks or meeting notes, reports task progress or completion, asks what became possible after prior work, or wants to update and review his current work state without inventing context.
 ---
 
 # Track Work Context
@@ -48,6 +48,19 @@ Do not treat Ryo speaking about a topic, volunteering information, or being pres
 ## Process direct instructions
 
 When Ryo directly states a task, record only what he states. Keep unspecified fields as `not stated`. If ambiguity is not blocking, register the task without interrogating him and surface the missing fields briefly.
+
+## Process Jira tasks
+
+Treat Jira as the source of truth for Jira-owned fields and the local work ledger as a read cache for planning. Follow [references/jira-cache.md](references/jira-cache.md).
+
+When Ryo supplies a Jira issue or pasted Jira snapshot:
+
+1. Preserve the issue key, URL when available, summary, status, assignee, priority, due date, description, acceptance conditions, blockers, and Jira update timestamp when stated.
+2. Record the local observation time separately from Jira's update time.
+3. Do not infer missing Jira fields or treat a pasted summary as a live Jira read.
+4. Let Ryo's direct priority instruction override Jira priority only in the local planning view. Preserve the original Jira priority unchanged.
+5. Compare requirement claims in Jira with authoritative project sources. Record a conflict or possible stale statement instead of silently rewriting either source.
+6. Never write changes back to Jira unless Ryo explicitly requests the exact update.
 
 ## Process completion and history
 
