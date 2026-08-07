@@ -1,0 +1,4 @@
+interface:
+  display_name: "Chief of Staff"
+  short_description: "確認済みの仕事情報を統合し、判断事項と次の一手を提案する"
+  default_prompt: "Use $chief-of-staff to review my confirmed tasks and project direction, then recommend my next decisions and actions."

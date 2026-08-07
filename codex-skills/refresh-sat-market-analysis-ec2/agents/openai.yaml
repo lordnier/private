@@ -1,0 +1,7 @@
+interface:
+  display_name: "Refresh SAT Market EC2"
+  short_description: "Update and verify the SAT market analysis EC2 demo"
+  default_prompt: "Use $refresh-sat-market-analysis-ec2 to update and verify the EC2 market analysis demo environment."
+
+policy:
+  allow_implicit_invocation: true
