@@ -26,11 +26,14 @@ Turn implementation decisions into an explanation that prevents reviewers from m
    - What the reviewer should confirm
 5. Call out intentional non-display and non-operation conditions explicitly. Never leave a reviewer to infer whether an absent result is a defect.
 6. Draft the requested communication for the user's channel. Default to a natural internal Slack message when the channel is not specified.
-7. Check that every important limitation has a reason and that no unsupported rationale was invented.
+7. For Slack or chat output, read `../format-readable-message/SKILL.md` completely and apply its shaping, density, emphasis, and output rules before returning the send-ready message. Preserve the content decisions made by this skill.
+8. Check that every important limitation has a reason and that no unsupported rationale was invented.
 
 ## Default Output
 
 When the user does not specify a format, provide one natural review-request message ready to send. Add a separate internal decision summary only when the user asks for one.
+
+For Slack or chat, treat the final message as paste-ready text. Do not use Markdown headings, tables, fenced blocks, or source-oriented formatting. Allow only the minimal Slack-native emphasis permitted by `format-readable-message`.
 
 When the user asks which changes should be communicated, first provide the two-section classification described above. If the user also asks for a send-ready message, draft it from 「共有した方がよい内容」 only.
 

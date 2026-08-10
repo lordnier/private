@@ -1,0 +1,6 @@
+interface:
+  display_name: "読みやすいメッセージ整形"
+  short_description: "Slackやチャットへ貼りやすい文章構造と改行に整える"
+  default_prompt: "Use $format-readable-message to turn this draft into a clean, readable message that I can paste directly into Slack or another chat."
+policy:
+  allow_implicit_invocation: false
