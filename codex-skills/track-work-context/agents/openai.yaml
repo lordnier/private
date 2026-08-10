@@ -1,4 +1,0 @@
-interface:
-  display_name: "Work Context Tracker"
-  short_description: "議事録と指示から、根拠付きで仕事の現在地と履歴を安全に整理する"
-  default_prompt: "Use $track-work-context to extract confirmed tasks and pending candidates from meeting notes or my instructions with evidence."
