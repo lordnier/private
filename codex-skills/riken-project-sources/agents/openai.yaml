@@ -1,0 +1,4 @@
+interface:
+  display_name: "理研プロジェクト資料"
+  short_description: "理研資料の優先順位と確定度を判定して調査する"
+  default_prompt: "Use $riken-project-sources to answer from the local SAT +理研 sources using the project source policy."

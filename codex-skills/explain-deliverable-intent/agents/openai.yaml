@@ -1,0 +1,4 @@
+interface:
+  display_name: "成果物の意図説明"
+  short_description: "成果物の変更内容と判断意図を自然なレビュー依頼文に整理"
+  default_prompt: "Use $explain-deliverable-intent to inspect this成果物 and draft a natural Japanese review request that explains the変更内容・判断理由・表示条件・意図的な対象外."
